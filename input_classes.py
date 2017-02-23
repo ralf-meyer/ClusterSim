@@ -119,7 +119,8 @@ class Ikosaeder(object):
     def get_magic_nr(n):
         n = n+1 # To stay consistent with the definition of number of layers
         return (10*n**3 - 15*n**2 + 11*n - 3)/3
-        
+    
+    @staticmethod    
     def draw_sphere(ax, center, c = "b"):
         u = _np.linspace(0, 2 * _np.pi, 72+1)
         v = _np.linspace(0, _np.pi, 36+1)
@@ -129,6 +130,17 @@ class Ikosaeder(object):
         z = center[2] + 1 * _np.outer(_np.ones(_np.size(u)), _np.cos(v))
         ax.plot_surface(x, y, z,  rstride=4, cstride=4, linewidth = 0, color = c, alpha = 0.5)
 
+class TwoDGrid(object):
 
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
 
+    def get_xyz(self, scale):
+        xyzs = []
+        for i in xrange(self.a):
+            for j in xrange(self.b):
+                xyzs.append(scale*(i*_np.array([1.,0.,0.]) + j*_np.array([0.,1.,0.])))
+        return xyzs
+        
 
