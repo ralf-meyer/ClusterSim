@@ -18,24 +18,49 @@ class MarkovChainMonteCarlo(object):
         self.energies = [e_start]
         self.e_curr = [e_start]
         self.e_min = e_start
-        self.pos_min = self.lmp.gather_atoms("x", 1, 3)
+        self.pos_min = copy.deepcopy(self.lmp.gather_atoms("x", 1, 3))
+        self.types_min = copy.deepcopy(self.lmp.gather_atoms("type", 0, 1))
         self.coord_nrs = [copy.copy(self.coord_curr)]
+        self.plot_current_geo(filename = "min_auto")
     
 
-    def step(self, T):
+    def step(self, T, exchange = "neighbors", eta = 1, log_coords = True):
         pos_old = self.lmp.gather_atoms("x", 1, 3)
-        types_old = self.lmp.gather_atoms("type",0,1)
+        types_old = self.lmp.gather_atoms("type", 0, 1)
         types = copy.copy(types_old)
     
-        # randomly choose a pair of neighboring atoms of different type 
-        for ind1 in _np.random.permutation(self.lmp.get_natoms()):
-            find = False 
-            for ind2 in _np.random.permutation(self.neighbors[ind1]):
-                if not types[ind1] == types[ind2]:
-                    find = True
+        found = False 
+        if exchange == "neighbors":
+            # randomly choose a pair of neighboring atoms of different type             
+            for ind1 in _np.random.permutation(self.lmp.get_natoms()):                
+                for ind2 in _np.random.permutation(self.neighbors[ind1]):
+                    if not types[ind1] == types[ind2]:
+                        found = True
+                        break
+                if found:
                     break
-            if find:
-                break
+        elif exchange == "tailored":    
+            # randomly choose a pair of different type based on their coordination number
+            # TODO rewrite failproof:
+            tot_coord = _np.sum(eta*self.coord_curr+1)
+            cum_coord = _np.cumsum(eta*self.coord_curr+1)
+            for rand1 in _np.random.permutation(tot_coord):
+                ind1 = _np.argmax(cum_coord >  rand1)
+                for rand2 in _np.random.permutation(tot_coord):
+                    ind2 = _np.argmax(cum_coord > rand2)
+                    if not types[ind1] == types[ind2]:
+                        found = True
+                        break
+                if found:
+                    break
+        else: # Random
+            for ind1 in _np.random.permutation(self.lmp.get_natoms()):
+                for ind2 in _np.random.permutation(self.lmp.get_natoms()):
+                    if not types[ind1] == types[ind2]:
+                        found = True
+                        break
+                if found:
+                    break
             
         # swap their type 
         types[ind1], types[ind2] = types[ind2], types[ind1]
@@ -73,12 +98,17 @@ class MarkovChainMonteCarlo(object):
             self.e_curr.append(e_new) 
             if e_new < self.e_min: 
                 self.e_min = e_new
-                self.pos_min = self.lmp.gather_atoms("x", 1, 3)
+                self.pos_min = copy.deepcopy(
+                        self.lmp.gather_atoms("x", 1, 3))
+                self.types_min = copy.deepcopy(
+                        self.lmp.gather_atoms("type", 0, 1))
+                self.plot_current_geo(filename = "min_auto")
         else: # Decline
             self.lmp.scatter_atoms("type", 0, 1, types_old)
             self.lmp.scatter_atoms("x", 1, 3, pos_old)
             self.e_curr.append(self.e_curr[-1])
-        self.coord_nrs.append(copy.copy(self.coord_curr))
+        if log_coords:
+            self.coord_nrs.append(copy.copy(self.coord_curr))
 
     def calc_neighbors(self):
         pos = self.lmp.gather_atoms("x",1,3)
@@ -104,3 +134,17 @@ class MarkovChainMonteCarlo(object):
             coordination.append(c)
         coordination = _np.array(coordination) # Allow easier slicing
         return neighbors, coordination
+    
+    def plot_current_geo(self, filename = "curr_geo"):
+        self.lmp.command(
+                "write_dump all image {}.png type type zoom 2.5 view 60 0 box no 1.0 modify backcolor white adiam 1 3.0".format(filename))
+        
+    def plot_min_geo(self, filename = "min_geo"):
+        pos_old = self.lmp.gather_atoms("x",1,3)
+        types_old = self.lmp.gather_atoms("type",0,1)
+        self.lmp.scatter_atoms("x", 1, 3, self.pos_min)
+        self.lmp.scatter_atoms("type", 0, 1, self.types_min)
+        self.lmp.command(
+                "write_dump all image {}.png type type zoom 2.5 view 60 0 box no 1.0 modify backcolor white adiam 1 3.0".format(filename))
+        self.lmp.scatter_atoms("x", 1, 3, pos_old)
+        self.lmp.scatter_atoms("type", 0, 1, types_old)
